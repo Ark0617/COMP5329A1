@@ -7,7 +7,7 @@ import numpy as np
 import h5py
 import random
 
-
+# This module is for forward feeding batch_normalization, with 'trainning' and 'testing' mode
 def batchnorm_forward(x, gamma, beta, bn_param):
     mode = bn_param['mode']
     eps = bn_param.get('eps', 1e-5)
@@ -17,8 +17,6 @@ def batchnorm_forward(x, gamma, beta, bn_param):
     running_mean = np.transpose([running_mean])
     running_var = bn_param.get('running_var', np.zeros(D, dtype=x.dtype))
     running_var = np.transpose([running_var])
-
-    # out, cache = None, None
 
     if mode == 'training':
 
@@ -32,7 +30,7 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         running_mean = momentum * running_mean + (1 - momentum) * sample_mean
         running_var = momentum * running_var + (1 - momentum) * sample_var
         out = gamma * out_ + beta
-        cache = (out, x, sample_var, sample_mean, eps, gamma, beta)
+        cache = (out, x, sample_var, sample_mean, eps, gamma, beta) #cache all useful inforamtion for next iteration
 
     elif mode == 'testing':
         out, cache = None, None
@@ -45,10 +43,8 @@ def batchnorm_forward(x, gamma, beta, bn_param):
 
     return out, cache
 
-
+#This module is for Batching Normalization when doing back propagation
 def batchnorm_backward(dout, cache):
-
-    # dx, dgamma, dbeta = None, None, None
 
     out_, x, sample_var, sample_mean, eps, gamma, beta = cache
     N = x.shape[1]
@@ -70,7 +66,9 @@ def batchnorm_backward(dout, cache):
 
     return dx, dgamma, dbeta
 
-
+##SoftMax function attached to output layer
+#@param  a matrix including a mini-batch's outputs from the output layer
+#@return  a same dimension matrix
 def SoftMax(outputs):
 
     arr = np.array(outputs)
@@ -78,7 +76,11 @@ def SoftMax(outputs):
     return exps / np.sum(exps, axis = 0)
 
 
-def Loss_derivation(outputs, Y):#this is the cross entropy loss derivation
+##this is the cross entropy loss derivation which calculate the gradients for outputs of the output layer
+#@param   a matrix including a mini-batch's outputs from the output layer
+#@param   a mini-batch's labels vector
+#return   the gradients for outputs of the output layer
+def Loss_derivation(outputs, Y):
     Y = np.array(Y)
     data = Y.shape[0]
     grad = SoftMax(outputs)
@@ -87,7 +89,12 @@ def Loss_derivation(outputs, Y):#this is the cross entropy loss derivation
     grad = grad / data
     return grad
 
-
+##This is cross entropy function module in order to calculate loss of each iteration
+#@param  a matrix including a mini-batch's outputs from the output layer
+#@param  a mini-batch's labels vector
+#@param  a weight list including each layer's weight matrix
+#@param  lambd is a weight decay rate
+#@return loss for this mini-batch training
 def cross_entropy(outputs, Y, W, lambd):
     Y = np.array(Y)
     data = Y.shape[0]
@@ -96,14 +103,18 @@ def cross_entropy(outputs, Y, W, lambd):
     for i in range(0, probs.shape[1]):
         loss.append(-np.log(probs[Y[i], i]))
     lossTotal = np.sum(loss) / data
-    lossTotal = weight_decay(W, outputs, lambd, lossTotal)
+    lossTotal = weight_decay(W, outputs, lambd, lossTotal) #apply weight decay to the loss function
     return lossTotal
 
-
+##Relu activation for each layer's neurons 
+#@param a matrix for W.dot(X)
+#@return a matrix after Relu's filtering
 def Relu(net):
     return np.maximum(0, net)
 
-
+##Relu derivative function module
+#@param  a matrix for W.dot(X)
+#@return  a Relu's derivative matrix
 def Relu_derivative(net):
     dev_matrix = np.ones((net.shape[0], net.shape[1]))
     for i in range(0, net.shape[0]):
@@ -117,16 +128,17 @@ def Relu_derivative(net):
 
 
 class NeuralNetwork:
+    #Initialization of a neural network
     def __init__(self, layerUnitsNum):#layerUnitsNum is a list which contains the number of neurons in each layer. This includes input layers, hidden layers and output layer
         self.activation = Relu
         self.activation_derivative = Relu_derivative
         self.weights = []
         self.biases = []
         self.layer = layerUnitsNum
-        self.velocity = []
-        self.adam=[]
-        self.gamma = []
-        self.belta = []
+        self.velocity = [] #first order momentum
+        self.adam=[] #second order momentum for Adam optimiser
+        self.gamma = [] #scale for batch normalization
+        self.belta = [] #shift for batch normalization
         for i in range(1, len(layerUnitsNum)):
             #weights,biases initialization
             self.weights.append(np.random.randn(layerUnitsNum[i], layerUnitsNum[i-1]) * np.sqrt(2 / (layerUnitsNum[i-1] + 1)))
@@ -135,8 +147,17 @@ class NeuralNetwork:
             self.adam.append(np.zeros((layerUnitsNum[i], layerUnitsNum[i-1])))
             self.gamma.append(np.ones(layerUnitsNum[i]))
             self.belta.append(np.zeros(layerUnitsNum[i]))
-
-    def train(self, xData, yData, alpha, epochs, mini_batch_size, v_decay,adamBelta,dropout_prob, lamb, eps=1e-5):
+    ##The main train process including forward propagation and back propagation is implemented here
+    #@param train data set without label
+    #@param labels for train data
+    #@param alpha(learning rate)
+    #@param num of epochs
+    #@param  mini_batch_size
+    #@param v_decay(momentum)
+    #@param adamBelta(second order momentum for Adam optimiser
+    #@param  dropout_prob (drop out probability)
+    #@param  lamb for weight decay
+    def train(self, xData, yData, alpha, epochs, mini_batch_size,v_decay,adamBelta,dropout_prob, lamb, eps=1e-5):
         test = 0
         x = np.atleast_2d(xData)
         x = np.array(x)
@@ -149,8 +170,8 @@ class NeuralNetwork:
             indices = np.random.permutation(xData.shape[0])
             x = x[indices]
             y = y[indices]
-            for k in range(0, xData.shape[0], mini_batch_size):
-                x_mini = x[k:k+mini_batch_size]
+            for k in range(0, xData.shape[0], mini_batch_size): #divide trainning data into mini-batch
+                x_mini = x[k:k+mini_batch_size] 
                 y_mini = y[k:k+mini_batch_size]
                 if k+mini_batch_size>xData.shape[0]:
                     x_mini=x[k:xData.shape[0]]
@@ -162,55 +183,55 @@ class NeuralNetwork:
                 died = []
                 caches = []
                 inputs.append(first_inputs)
-                for w in range(0, len(self.weights)):#forword propagation
+                #forword propagation
+                for w in range(0, len(self.weights)):
                     bn_param = {'mode': 'training'}
                     temp = np.dot(self.weights[w], inputs[-1]) + np.array([self.biases[w][:, 0]]).T
                     if first_time == 0:
                         self.gamma[w] = np.array([self.gamma[w]])
                         self.belta[w] = np.array([self.belta[w]])
-
-                    #print(test, end=" ", flush=True)
                     test += 1
+                    #do forward batch normalization
                     temp1, cache = batchnorm_forward(temp, self.gamma[w].T, self.belta[w].T, bn_param)
                     caches.append(cache)
-                    #if w != len(self.weights)-1:
                     net.append(temp1)
+                    
+                    #drop out some neurons and stored died neurons' index for back propagation
                     if w != len(self.weights) - 1:
                         net[-1], diedi = dropout(net[-1], dropout_prob[w])
                         died.append(diedi)
                     outputs = self.activation(net[-1])
-
-
                     inputs.append(outputs)
+                    
                 probs = SoftMax(outputs)
                 loss = cross_entropy(outputs, y_mini, self.weights, lamb)
-                #print("loss")
-                #print(loss)
                 delta = Loss_derivation(outputs, y_mini)*Relu_derivative(net[len(self.layer)-2])
-                #delta is the similarity for each layer
+                #delta is the sensitivity for each layer
                 weights_grads = []
                 biases_grads = []
                 gamma_grads = []
                 belta_grads = []
                 cachesIndex = 1
-
-                for l in range(len(self.layer)-2, -1, -1):#back propagation
+                #do back propagation
+                for l in range(len(self.layer)-2, -1, -1):
+                    #do backward batch normalization
                     delta, dgamma, dbelta = batchnorm_backward(delta, caches[len(caches) - cachesIndex])
                     cachesIndex += 1
                     gamma_grads.append(dgamma)
                     belta_grads.append(dbelta)
                     wdelta = inputs[l].dot(delta.T)
+                    #backward weight decay
                     wdelta = weight_decay_back(wdelta, self.weights[l].T, inputs[l], lamb)
                     bdelta = delta
 
-                    #momentum gradient implements here
-
+                    #momentum and Adam implements here
                     self.velocity[l] = self.velocity[l]*v_decay+0.001*wdelta.T
                     self.adam[l] = np.maximum(self.adam[l], self.adam[l]*adamBelta+(1-adamBelta)*np.power(wdelta.T,2))
 
                     weights_grads.append(self.velocity[l])
                     biases_grads.append(bdelta)
-
+                    
+                    #implement backward drop out
                     if l != len(self.layer) - 2:
                         for t in range(0, delta.shape[0]):
                             delta[t] = delta[t] * died[l][t]
@@ -219,6 +240,7 @@ class NeuralNetwork:
                     if l == 0:
                         delta = delta
                     else:
+                        #pass sensitivity back
                         delta = self.weights[l].T.dot(delta)*Relu_derivative(net[l-1])
 
 
@@ -226,39 +248,51 @@ class NeuralNetwork:
                 biases_grads.reverse()
                 gamma_grads.reverse()
                 belta_grads.reverse()
+                #update weights,biases,gamma and beta
                 for u in range(len(self.weights)):
-
-                    self.weights[u] = self.weights[u]-weights_grads[u]/(np.sqrt(self.adam[u]+eps))
+                    self.weights[u] = self.weights[u]-weights_grads[u]/(np.sqrt(self.adam[u])+eps)
                     self.weights[u] = self.weights[u]-weights_grads[u]
                     self.biases[u] = np.array([self.biases[u][:,0]]).T-alpha*biases_grads[u]
                     self.gamma[u] = self.gamma[u]-alpha*gamma_grads[u]
                     self.belta[u] = self.belta[u]-alpha*belta_grads[u]
                 first_time += 1
+            #print accuracy for each epoch
             print("epoch: "+str(i))
-            self.predict(xData, yData)
-
-    def predict(self, datax, datay):
+            result = self.predict(xData)
+            self.testAccuracy(result,yData)
+            
+    ##This module is to calculate accuracy 
+    #@param results(predict results)
+    #@param datay(data labels)
+    def testAccuracy(results, datay):
+        datay=np.array(datay)
+        correct = 0
+        for i in range(0, result.shape[0]):
+            if result[i] == datay[i]:
+                correct += 1
+        accuracy = float(correct/datax.shape[1])
+        print(accuracy)
+        
+    ##This module is to predict a test data after training
+    #@param datax(test data)
+    #@return result(predict results)
+    def predict(self, datax):
         datax = np.array(datax)
         datax = np.atleast_2d(datax)
         datax = datax.T
-        datay=np.array(datay)
         for l in range(0, len(self.weights)):
             datax = np.dot(self.weights[l], datax) + np.transpose([self.biases[l][:, 0]])
             bn_param = {'mode': 'testing'}
             datax, cache = batchnorm_forward(datax, self.gamma[l].T, self.belta[l].T, bn_param)
             datax = Relu(datax)
-
         result = np.argmax(datax,axis=0)
-        correct = 0
-        for i in range(0, result.shape[0]):
-            if result[i] == datay[i]:
-                # print("result: "+ str(result[i])+" actual: "+str(datay[i]))
-                correct += 1
-        accuracy = float(correct/datax.shape[1])
-        print(accuracy)
-        #return data
+        return result
 
-
+##This module is drop out some randomly selected neurons for each layer to avoid overfitting
+#@param x (a matrix for each layer calculation of W.dot(Y))
+#@param prob(drop out probability)
+#@return x (a matrix filtered by dropout)
+#@return sample (a random generated dropout vector such as [1,0,0,1,0,...,1], 0 for died neuron, 1 for retained neuron)
 def dropout(x, prob):
     retain_prob = 1 - prob
     sample = np.random.binomial(n=1, p=retain_prob, size=x.shape[0])
@@ -288,13 +322,13 @@ if __name__ == "__main__":
         data = np.copy(H['data'])
     with h5py.File('train_label.h5', 'r') as H:
         label = np.copy(H['label'])
-    #with h5py.File('')
-    test = data[0:6000]
-    #print(test.shape)
-    testLabel = label[0:6000]
-    network = NeuralNetwork([128, 256, 256, 10])
-    data = data[6001:60000]
-    label = label[6001:60000]
+    with h5py.File('test_128.h5','r') as H:
+        test = np.copy(H['test'])
+#     test = data[0:6000]
+#     testLabel = label[0:6000]
+    network = NeuralNetwork([128, 70, 70, 10])
+#     data = data[6001:60000]
+#     label = label[6001:60000]
     #xData, yData, alpha(learning rate), epochs, mini_batch_size, v_decay(momentum), adamBelta, dropout_prob, lamb(weight decay), eps=1e-5
     network.train(data, label, 0.0001, 20, 32, 0.9, 0.9, [0.2, 0.5], 0.00001, 1e-5)
-    network.predict(test, testLabel)
+    network.predict(test)
